@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import api from "../lib/api";
 
 export default function Login() {
@@ -18,7 +18,8 @@ export default function Login() {
   };
 
   return (
-    <form onSubmit={submit}>
+    <div className="form-container">
+      <form onSubmit={submit}>
       <input placeholder="username" value={u} onChange={(e) => setU(e.target.value)} />
       <input
         placeholder="password"
@@ -28,6 +29,7 @@ export default function Login() {
       />
       <button type="submit">Entrar</button>
       <p>{msg}</p>
-    </form>
+      </form>
+    </div>
   );
 }
