@@ -4,3 +4,7 @@ djangorestframework-simplejwt==5.3.1
 drf-spectacular==0.27.2
 django-cors-headers==4.4.0
 psycopg[binary]==3.2.1
+channels==4.0.0
+channels-redis==4.2.0
+mediapipe==0.10.14
+opencv-python-headless==4.10.0.84
