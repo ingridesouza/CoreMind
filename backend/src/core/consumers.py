@@ -45,15 +45,39 @@ class GestureConsumer(AsyncWebsocketConsumer):
                 for hand_landmarks in results.multi_hand_landmarks:
                     mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                     landmarks = hand_landmarks.landmark
-                    is_thumb_up = landmarks[mp_hands.HandLandmark.THUMB_TIP].x < landmarks[mp_hands.HandLandmark.THUMB_IP].x
-                    other_fingers_up = [1 if landmarks[tip].y < landmarks[pip].y else 0 for tip, pip in [(mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.INDEX_FINGER_PIP), (mp_hands.HandLandmark.MIDDLE_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_PIP), (mp_hands.HandLandmark.RING_FINGER_TIP, mp_hands.HandLandmark.RING_FINGER_PIP), (mp_hands.HandLandmark.PINKY_TIP, mp_hands.HandLandmark.PINKY_PIP)]]
-                    finger_count = (1 if is_thumb_up else 0) + sum(other_fingers_up)
+                    tip_ids = [4, 8, 12, 16, 20]
+                    fingers_up = []
 
+                    # Lógica para o Polegar (eixo X)
+                    # Verifica se a mão é direita ou esquerda para ajustar a lógica
+                    if landmarks[tip_ids[0]].x < landmarks[tip_ids[0] - 1].x:
+                        # Mão Esquerda
+                        if landmarks[tip_ids[0]].x < landmarks[tip_ids[0] - 1].x:
+                            fingers_up.append(1)
+                        else:
+                            fingers_up.append(0)
+                    else:
+                        # Mão Direita
+                        if landmarks[tip_ids[0]].x > landmarks[tip_ids[0] - 1].x:
+                            fingers_up.append(1)
+                        else:
+                            fingers_up.append(0)
+
+                    # Lógica para os outros 4 dedos (eixo Y)
+                    for id in range(1, 5):
+                        if landmarks[tip_ids[id]].y < landmarks[tip_ids[id] - 2].y:
+                            fingers_up.append(1)
+                        else:
+                            fingers_up.append(0)
+
+                    finger_count = sum(fingers_up)
+
+                    # Lógica de reconhecimento de gestos
                     if finger_count == 5: gesture = "Mão Aberta"
-                    elif finger_count == 2 and other_fingers_up[0] and other_fingers_up[1]: gesture = "Paz"
-                    elif finger_count == 1 and is_thumb_up: gesture = "Polegar para Cima"
-                    elif finger_count == 1 and other_fingers_up[0]: gesture = "Apontando"
                     elif finger_count == 0: gesture = "Punho Fechado"
+                    elif finger_count == 1 and fingers_up[0]: gesture = "Polegar para Cima"
+                    elif finger_count == 1 and fingers_up[1]: gesture = "Apontando"
+                    elif finger_count == 2 and fingers_up[1] and fingers_up[2]: gesture = "Paz"
                     else: gesture = f"{finger_count} dedos"
                     cv2.putText(img, gesture, (10, 70), cv2.FONT_HERSHEY_PLAIN, 3, (255, 0, 255), 3)
 

@@ -9,84 +9,48 @@ const Gesture = () => {
     const [processedImage, setProcessedImage] = useState<string | null>(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
 
-    const startRecognition = () => {
+    // Inicia o processo de reconhecimento
+    const startRecognition = async () => {
         console.log("1. Clicou em Iniciar Reconhecimento.");
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                console.log("2. Permissão da câmera concedida.");
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                }
+            } catch (err) {
+                console.error("ERRO ao acessar a câmera: ", err);
+                alert("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+            }
+        } else {
+            alert("Seu navegador não suporta acesso à câmera.");
+        }
+    };
+
+    const handleCanPlay = () => {
+        console.log("3. Vídeo pronto para reprodução (onCanPlay).");
+        videoRef.current?.play().catch(err => {
+            console.error("Erro ao tentar reproduzir o vídeo:", err);
+            alert("Não foi possível iniciar a exibição da câmera.");
+        });
         setIsCameraActive(true);
     };
 
+    // Efeito para conectar ao WebSocket e enviar frames quando a câmera está ativa
     useEffect(() => {
-        let animationFrameId: number;
+        if (!isCameraActive || !videoRef.current) return;
 
-        if (isCameraActive && videoRef.current && ws.current) {
-            const video = videoRef.current;
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-
-            const sendFrame = () => {
-                if (!isCameraActive || !videoRef.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
-                    return; // Stop the loop if camera is off or websocket is closed
-                }
-
-                if (video.readyState === video.HAVE_ENOUGH_DATA && context) {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                    ws.current.send(JSON.stringify({ image: imageData }));
-                }
-                animationFrameId = requestAnimationFrame(sendFrame);
-            };
-
-            sendFrame(); // Start the loop
-        }
-
-        return () => {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-            }
-        };
-    }, [isCameraActive]);
-
-    useEffect(() => {
-        if (isCameraActive && videoRef.current) {
-            let stream: MediaStream;
-            const setupCamera = async () => {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    console.log("2. Permissão da câmera concedida. Stream obtido.");
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                    }
-                } catch (err) {
-                    console.error("ERRO ao acessar a câmera: ", err);
-                    alert("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
-                    setIsCameraActive(false);
-                }
-            };
-
-            setupCamera();
-
-            return () => {
-                // Limpeza quando o componente desmonta ou a câmera é desativada
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                }
-            };
-        }
-    }, [isCameraActive]);
-
-    const handleVideoLoaded = () => {
-        console.log("4. Vídeo carregado (onLoadedData). Tentando conectar ao WebSocket.");
+        console.log("3. Câmera ativa, preparando para conectar ao WebSocket.");
         ws.current = new WebSocket('ws://localhost:8000/ws/gestures/');
 
         ws.current.onopen = () => {
-            console.log("5. WebSocket conectado com sucesso.");
-            sendFrame(); // Start sending frames
+            console.log("4. WebSocket conectado. Iniciando envio de frames.");
+            sendFrameLoop(); // Inicia o loop de envio de frames
         };
 
         ws.current.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            console.log("7. Mensagem recebida do backend:", data);
             setGesture(data.gesture || '');
             setFingerCount(data.finger_count);
             setProcessedImage(data.image);
@@ -99,33 +63,37 @@ const Gesture = () => {
         ws.current.onclose = () => {
             console.log("WebSocket desconectado.");
         };
-    };
 
-    useEffect(() => {
+        const sendFrameLoop = () => {
+            if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !videoRef.current) {
+                console.log("Parando loop de envio de frames.");
+                return;
+            }
+
+            const video = videoRef.current;
+            const canvas = canvasRef.current;
+            if (video.readyState === video.HAVE_ENOUGH_DATA && canvas) {
+                const context = canvas.getContext('2d');
+                if (context) {
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                    ws.current.send(JSON.stringify({ image: imageData }));
+                }
+            }
+            requestAnimationFrame(sendFrameLoop); // Continua o loop
+        };
+
+        // Função de limpeza para o useEffect
         return () => {
+            console.log("Limpando: fechando WebSocket e parando câmera.");
             ws.current?.close();
             if (videoRef.current && videoRef.current.srcObject) {
                 const stream = videoRef.current.srcObject as MediaStream;
                 stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
             }
         };
-    }, []);
-
-    const sendFrame = () => {
-        if (videoRef.current && canvasRef.current && ws.current?.readyState === WebSocket.OPEN) {
-            const context = canvasRef.current.getContext('2d');
-            if (context) {
-                context.drawImage(videoRef.current, 0, 0, 640, 480);
-                const data = canvasRef.current.toDataURL('image/jpeg');
-                ws.current.send(JSON.stringify({ image: data }));
-                console.log("6. Frame enviado para o backend.");
-            }
-        }
-        // Continue o loop apenas se a câmera estiver ativa
-        if (isCameraActive) {
-            requestAnimationFrame(sendFrame);
-        }
-    };
+    }, [isCameraActive]);
 
     return (
         <div>
@@ -138,7 +106,7 @@ const Gesture = () => {
                 <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
                     <div>
                         <h2>Câmera Raw (Debug)</h2>
-                        <video ref={videoRef} width="640" height="480" autoPlay muted playsInline onLoadedData={handleVideoLoaded} style={{ border: '2px solid blue' }}></video>
+                        <video ref={videoRef} width="640" height="480" autoPlay muted playsInline onCanPlay={handleCanPlay} style={{ border: '2px solid blue' }}></video>
                         <canvas ref={canvasRef} width="640" height="480" style={{ display: 'none' }}></canvas>
                         <h2>Imagem Processada</h2>
                         {processedImage ? 
